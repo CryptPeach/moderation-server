@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Moderation HQ</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #0a0a0f;
+    --surface:  #111118;
+    --card:     #16161f;
+    --border:   #222230;
+    --accent:   #ff4d6d;
+    --accent2:  #7c3aed;
+    --green:    #22c55e;
+    --yellow:   #eab308;
+    --text:     #e2e2f0;
+    --muted:    #6b6b88;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Syne', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  /* ── Scanline overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,.08) 2px, rgba(0,0,0,.08) 4px);
+  }
+
+  /* ── Layout ── */
+  .shell { display: grid; grid-template-columns: 220px 1fr; min-height: 100vh; }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 28px 0; display: flex; flex-direction: column; gap: 4px;
+    position: sticky; top: 0; height: 100vh;
+  }
+  .logo {
+    padding: 0 20px 24px; font-size: 18px; font-weight: 800; letter-spacing: -0.5px;
+    border-bottom: 1px solid var(--border); margin-bottom: 8px;
+  }
+  .logo span { color: var(--accent); }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+    cursor: pointer; font-size: 13px; font-weight: 600; color: var(--muted);
+    transition: all .15s; border-left: 3px solid transparent; letter-spacing: .3px;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(255,255,255,.03); }
+  .nav-item.active { color: var(--text); border-left-color: var(--accent); background: rgba(255,77,109,.06); }
+  .nav-item .icon { font-size: 16px; }
+  .badge {
+    margin-left: auto; background: var(--accent); color: #fff;
+    font-size: 10px; font-family: var(--mono); padding: 2px 6px; border-radius: 20px;
+    min-width: 20px; text-align: center;
+  }
+  .badge.yellow { background: var(--yellow); color: #000; }
+
+  /* Auth gate */
+  .auth-gate {
+    display: flex; align-items: center; justify-content: center; flex: 1;
+    padding: 20px; flex-direction: column; gap: 16px;
+  }
+  .auth-gate input {
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 12px 16px; border-radius: 8px; font-family: var(--mono); font-size: 14px;
+    width: 100%; outline: none;
+  }
+  .auth-gate input:focus { border-color: var(--accent2); }
+
+  /* ── Main ── */
+  .main { padding: 32px; overflow-y: auto; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* ── Page header ── */
+  .page-header { margin-bottom: 28px; }
+  .page-header h1 { font-size: 26px; font-weight: 800; letter-spacing: -1px; }
+  .page-header p  { color: var(--muted); font-size: 13px; margin-top: 4px; font-family: var(--mono); }
+
+  /* ── Stat cards ── */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 16px; margin-bottom: 32px; }
+  .stat-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px; position: relative; overflow: hidden;
+  }
+  .stat-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--accent);
+  }
+  .stat-card.green::before  { background: var(--green); }
+  .stat-card.yellow::before { background: var(--yellow); }
+  .stat-card.purple::before { background: var(--accent2); }
+  .stat-label { font-size: 11px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .stat-value { font-size: 36px; font-weight: 800; margin-top: 6px; letter-spacing: -2px; }
+  .stat-card.green  .stat-value { color: var(--green); }
+  .stat-card.yellow .stat-value { color: var(--yellow); }
+  .stat-card.purple .stat-value { color: var(--accent2); }
+
+  /* ── Tables ── */
+  .table-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .table-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .table-header h3 { font-size: 14px; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; }
+  th { padding: 12px 16px; text-align: left; font-size: 11px; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.2); }
+  td { padding: 13px 16px; font-size: 13px; border-bottom: 1px solid rgba(34,34,48,.6); font-family: var(--mono); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* ── Badges ── */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+    font-family: var(--mono); text-transform: uppercase; letter-spacing: .5px;
+  }
+  .pill.red    { background: rgba(255,77,109,.15); color: var(--accent); border: 1px solid rgba(255,77,109,.3); }
+  .pill.green  { background: rgba(34,197,94,.12);  color: var(--green);  border: 1px solid rgba(34,197,94,.3); }
+  .pill.yellow { background: rgba(234,179,8,.12);  color: var(--yellow); border: 1px solid rgba(234,179,8,.3); }
+  .pill.purple { background: rgba(124,58,237,.12); color: #a78bfa;       border: 1px solid rgba(124,58,237,.3); }
+
+  /* ── Buttons ── */
+  .btn {
+    padding: 7px 14px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-family: var(--mono); font-weight: 600; transition: all .15s;
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .btn-danger  { background: rgba(255,77,109,.15); color: var(--accent); border: 1px solid rgba(255,77,109,.3); }
+  .btn-danger:hover  { background: var(--accent); color: #fff; }
+  .btn-success { background: rgba(34,197,94,.12); color: var(--green); border: 1px solid rgba(34,197,94,.3); }
+  .btn-success:hover { background: var(--green); color: #000; }
+  .btn-muted   { background: rgba(255,255,255,.05); color: var(--muted); border: 1px solid var(--border); }
+  .btn-muted:hover   { color: var(--text); }
+
+  /* ── Inputs ── */
+  .input-row { display: flex; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .input-row input, .input-row select {
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 6px; font-family: var(--mono); font-size: 12px; flex: 1; outline: none;
+  }
+  .input-row input:focus, .input-row select:focus { border-color: var(--accent2); }
+
+  /* ── Audit log ── */
+  .audit-entry { display: flex; gap: 12px; padding: 12px 16px; border-bottom: 1px solid rgba(34,34,48,.5); align-items: flex-start; font-family: var(--mono); font-size: 12px; }
+  .audit-entry:last-child { border-bottom: none; }
+  .audit-time { color: var(--muted); white-space: nowrap; min-width: 140px; }
+  .audit-user { color: var(--accent2); min-width: 100px; }
+  .audit-action { min-width: 120px; }
+  .audit-detail { color: var(--muted); flex: 1; word-break: break-all; }
+
+  /* ── Empty state ── */
+  .empty { padding: 48px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .empty .icon { font-size: 32px; display: block; margin-bottom: 8px; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+    background: var(--card); border: 1px solid var(--border); color: var(--text);
+    padding: 12px 20px; border-radius: 8px; font-family: var(--mono); font-size: 13px;
+    transform: translateY(80px); opacity: 0; transition: all .3s; pointer-events: none;
+  }
+  #toast.show { transform: translateY(0); opacity: 1; }
+  #toast.success { border-color: var(--green); color: var(--green); }
+  #toast.error   { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Loading ── */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .refresh-btn { font-size: 11px; color: var(--muted); cursor: pointer; font-family: var(--mono); background: none; border: none; }
+  .refresh-btn:hover { color: var(--text); }
+
+  /* ── Appeal message box ── */
+  .appeal-msg { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--muted); margin-top: 4px; max-width: 300px; word-break: break-word; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">MOD <span>HQ</span></div>
+    <div class="nav-item active" onclick="goto('overview')" data-page="overview"><span class="icon">◈</span> Overview</div>
+    <div class="nav-item" onclick="goto('reports')"  data-page="reports" ><span class="icon">🚩</span> Reports  <span class="badge" id="nb-reports">–</span></div>
+    <div class="nav-item" onclick="goto('bans')"     data-page="bans"    ><span class="icon">🔨</span> Bans</div>
+    <div class="nav-item" onclick="goto('appeals')"  data-page="appeals" ><span class="icon">📋</span> Appeals  <span class="badge yellow" id="nb-appeals">–</span></div>
+    <div class="nav-item" onclick="goto('cache')"    data-page="cache"   ><span class="icon">⚡</span> Hash Cache</div>
+    <div class="nav-item" onclick="goto('audit')"    data-page="audit"   ><span class="icon">📜</span> Audit Log</div>
+
+    <!-- Auth at bottom -->
+    <div style="margin-top:auto; padding:16px 20px; border-top:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px;">ADMIN SECRET</div>
+      <input id="secret-input" type="password" placeholder="Enter secret…"
+        style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:6px;font-family:var(--mono);font-size:12px;outline:none;"
+        oninput="setSecret(this.value)"/>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Overview -->
+    <section class="page active" id="page-overview">
+      <div class="page-header">
+        <h1>Overview</h1>
+        <p>// moderation system dashboard — real-time stats</p>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card red">   <div class="stat-label">Active Bans</div>     <div class="stat-value" id="s-bans">–</div></div>
+        <div class="stat-card yellow"><div class="stat-label">Pending Reports</div> <div class="stat-value" id="s-reports">–</div></div>
+        <div class="stat-card purple"><div class="stat-label">Pending Appeals</div> <div class="stat-value" id="s-appeals">–</div></div>
+        <div class="stat-card green"> <div class="stat-label">Cache Entries</div>   <div class="stat-value" id="s-cache">–</div></div>
+        <div class="stat-card green"> <div class="stat-label">Cache Hits Total</div><div class="stat-value" id="s-hits">–</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
+        <button class="btn btn-muted" onclick="loadStats()">↻ Refresh Stats</button>
+        <span id="stats-status" style="font-size:12px;color:var(--muted);font-family:var(--mono);"></span>
+      </div>
+    </section>
+
+    <!-- Reports -->
+    <section class="page" id="page-reports">
+      <div class="page-header"><h1>Reports Queue</h1><p>// unreviewed user reports</p></div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>Pending Reports</h3>
+          <button class="refresh-btn" onclick="loadReports()">↻ refresh</button>
+        </div>
+        <div id="reports-table"><div class="empty"><span class="icon">🔍</span>Loading…</div></div>
+      </div>
+    </section>
+
+    <!-- Bans -->
+    <section class="page" id="page-bans">
+      <div class="page-header"><h1>Banned Users</h1><p>// active bans — manual actions</p></div>
+      <div class="table-wrap" style="margin-bottom:20px;">
+        <div class="input-row">
+          <input id="ban-uid" placeholder="User ID to ban…"/>
+          <input id="ban-reason" placeholder="Reason…"/>
+          <button class="btn btn-danger" onclick="manualBan()">🔨 Ban</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>Active Bans</h3>
+          <button class="refresh-btn" onclick="loadBans()">↻ refresh</button>
+        </div>
+        <div id="bans-table"><div class="empty"><span class="icon">✓</span>Loading…</div></div>
+      </div>
+    </section>
+
+    <!-- Appeals -->
+    <section class="page" id="page-appeals">
+      <div class="page-header"><h1>Ban Appeals</h1><p>// review and approve / deny user appeals</p></div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>Pending Appeals</h3>
+          <button class="refresh-btn" onclick="loadAppeals()">↻ refresh</button>
+        </div>
+        <div id="appeals-table"><div class="empty"><span class="icon">📋</span>Loading…</div></div>
+      </div>
+    </section>
+
+    <!-- Cache -->
+    <section class="page" id="page-cache">
+      <div class="page-header"><h1>Hash Cache</h1><p>// image fingerprint cache — avoids re-scanning duplicates</p></div>
+      <div class="stats-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="stat-card green"> <div class="stat-label">Safe Hashes</div>   <div class="stat-value" id="cs-safe">–</div></div>
+        <div class="stat-card red">   <div class="stat-label">Unsafe Hashes</div> <div class="stat-value" id="cs-unsafe">–</div></div>
+        <div class="stat-card purple"><div class="stat-label">Total Hits</div>     <div class="stat-value" id="cs-hits">–</div></div>
+      </div>
+      <button class="btn btn-danger" onclick="clearCache()" style="margin-bottom:20px;">🗑 Clear Entire Cache</button>
+    </section>
+
+    <!-- Audit -->
+    <section class="page" id="page-audit">
+      <div class="page-header"><h1>Audit Log</h1><p>// every moderation action, timestamped</p></div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <h3>Recent Actions</h3>
+          <button class="refresh-btn" onclick="loadAudit()">↻ refresh</button>
+        </div>
+        <div id="audit-log" style="max-height:600px;overflow-y:auto;"><div class="empty"><span class="icon">📜</span>Loading…</div></div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const API = '';   // same origin — dashboard is served FROM the FastAPI server
+let SECRET = '';
+
+function setSecret(v) { SECRET = v; loadStats(); }
+
+const headers = () => ({ 'admin-secret': SECRET, 'Content-Type': 'application/json' });
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function goto(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + page).classList.add('active');
+  document.querySelector(`[data-page="${page}"]`).classList.add('active');
+  const loaders = { reports: loadReports, bans: loadBans, appeals: loadAppeals, audit: loadAudit, cache: loadStats };
+  if (loaders[page]) loaders[page]();
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'show ' + type;
+  setTimeout(() => t.className = '', 2500);
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const res = await fetch(API + path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+  if (!res.ok) throw new Error((await res.json()).detail || res.status);
+  return res.json();
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function loadStats() {
+  const el = document.getElementById('stats-status');
+  el.textContent = 'Loading…';
+  try {
+    const d = await api('GET', '/admin/stats');
+    document.getElementById('s-bans').textContent    = d.active_bans;
+    document.getElementById('s-reports').textContent = d.pending_reports;
+    document.getElementById('s-appeals').textContent = d.pending_appeals;
+    document.getElementById('s-cache').textContent   = d.cache_entries;
+    document.getElementById('s-hits').textContent    = d.total_cache_hits;
+    document.getElementById('nb-reports').textContent = d.pending_reports || '0';
+    document.getElementById('nb-appeals').textContent = d.pending_appeals || '0';
+    document.getElementById('cs-hits').textContent   = d.total_cache_hits;
+    el.textContent = '✓ Updated ' + new Date().toLocaleTimeString();
+  } catch(e) { el.textContent = '✗ ' + e.message; }
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+async function loadReports() {
+  const wrap = document.getElementById('reports-table');
+  wrap.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  try {
+    const data = await api('GET', '/admin/reports');
+    if (!data.length) { wrap.innerHTML = '<div class="empty"><span class="icon">✓</span>No pending reports</div>'; return; }
+    wrap.innerHTML = `<table>
+      <thead><tr><th>Reporter</th><th>Reported</th><th>Reason</th><th>Time</th><th>Action</th></tr></thead>
+      <tbody>${data.map(r => `
+        <tr>
+          <td>${r.reporter_id}</td>
+          <td><strong>${r.reported_id}</strong></td>
+          <td><span class="pill yellow">${r.reason}</span></td>
+          <td>${fmtDate(r.timestamp)}</td>
+          <td style="display:flex;gap:6px;">
+            <button class="btn btn-muted"   onclick="markReviewed('${r.id}')">✓ Dismiss</button>
+            <button class="btn btn-danger"  onclick="banFromReport('${r.reported_id}','${r.id}')">🔨 Ban</button>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch(e) { wrap.innerHTML = `<div class="empty">Error: ${e.message}</div>`; }
+}
+
+async function markReviewed(id) {
+  await api('PATCH', `/admin/reports/${id}`);
+  toast('Report dismissed'); loadReports(); loadStats();
+}
+
+async function banFromReport(userId, reportId) {
+  await api('POST', `/admin/ban/${encodeURIComponent(userId)}?reason=Banned+from+report`);
+  await api('PATCH', `/admin/reports/${reportId}`);
+  toast(`🔨 ${userId} banned`); loadReports(); loadStats();
+}
+
+// ── Bans ──────────────────────────────────────────────────────────────────────
+async function loadBans() {
+  const wrap = document.getElementById('bans-table');
+  wrap.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  try {
+    const data = await api('GET', '/admin/banned');
+    if (!data.length) { wrap.innerHTML = '<div class="empty"><span class="icon">✓</span>No active bans</div>'; return; }
+    wrap.innerHTML = `<table>
+      <thead><tr><th>User ID</th><th>Reason</th><th>Violations</th><th>Banned At</th><th>Action</th></tr></thead>
+      <tbody>${data.map(b => `
+        <tr>
+          <td><strong>${b.user_id}</strong></td>
+          <td>${b.reason}</td>
+          <td><span class="pill ${b.violations >= 3 ? 'red' : 'yellow'}">${b.violations}</span></td>
+          <td>${fmtDate(b.banned_at)}</td>
+          <td><button class="btn btn-success" onclick="unban('${b.user_id}')">↩ Unban</button></td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch(e) { wrap.innerHTML = `<div class="empty">Error: ${e.message}</div>`; }
+}
+
+async function manualBan() {
+  const uid    = document.getElementById('ban-uid').value.trim();
+  const reason = document.getElementById('ban-reason').value.trim() || 'Manual ban';
+  if (!uid) return toast('Enter a user ID', 'error');
+  await api('POST', `/admin/ban/${encodeURIComponent(uid)}?reason=${encodeURIComponent(reason)}`);
+  toast(`🔨 ${uid} banned`);
+  document.getElementById('ban-uid').value = '';
+  document.getElementById('ban-reason').value = '';
+  loadBans(); loadStats();
+}
+
+async function unban(uid) {
+  await api('DELETE', `/admin/ban/${encodeURIComponent(uid)}`);
+  toast(`✓ ${uid} unbanned`); loadBans(); loadStats();
+}
+
+// ── Appeals ───────────────────────────────────────────────────────────────────
+async function loadAppeals() {
+  const wrap = document.getElementById('appeals-table');
+  wrap.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  try {
+    const data = await api('GET', '/admin/appeals');
+    if (!data.length) { wrap.innerHTML = '<div class="empty"><span class="icon">📋</span>No pending appeals</div>'; return; }
+    wrap.innerHTML = `<table>
+      <thead><tr><th>User ID</th><th>Message</th><th>Submitted</th><th>Actions</th></tr></thead>
+      <tbody>${data.map(a => `
+        <tr>
+          <td><strong>${a.user_id}</strong></td>
+          <td><div class="appeal-msg">${a.message}</div></td>
+          <td>${fmtDate(a.submitted_at)}</td>
+          <td style="display:flex;gap:6px;">
+            <button class="btn btn-success" onclick="resolveAppeal('${a.id}','approve')">✓ Approve</button>
+            <button class="btn btn-danger"  onclick="resolveAppeal('${a.id}','deny')">✗ Deny</button>
+          </td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch(e) { wrap.innerHTML = `<div class="empty">Error: ${e.message}</div>`; }
+}
+
+async function resolveAppeal(id, action) {
+  await api('PATCH', `/admin/appeals/${id}?action=${action}`);
+  toast(action === 'approve' ? '✅ Appeal approved — user unbanned' : '❌ Appeal denied');
+  loadAppeals(); loadStats();
+}
+
+// ── Cache ─────────────────────────────────────────────────────────────────────
+async function clearCache() {
+  if (!confirm('Clear entire hash cache? All images will be re-scanned next upload.')) return;
+  await api('DELETE', '/admin/cache');
+  toast('🗑 Cache cleared'); loadStats();
+}
+
+// ── Audit ─────────────────────────────────────────────────────────────────────
+const ACTION_COLORS = { ban:'red', unban:'green', report:'yellow', block:'yellow', appeal_approved:'green', appeal_denied:'red', detect:'purple', appeal_submitted:'purple' };
+
+async function loadAudit() {
+  const wrap = document.getElementById('audit-log');
+  wrap.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  try {
+    const data = await api('GET', '/admin/audit');
+    if (!data.length) { wrap.innerHTML = '<div class="empty"><span class="icon">📜</span>No audit entries</div>'; return; }
+    wrap.innerHTML = data.map(e => {
+      const color = ACTION_COLORS[e.action] || 'muted';
+      return `<div class="audit-entry">
+        <span class="audit-time">${fmtDate(e.timestamp)}</span>
+        <span class="audit-user">${e.user_id || '—'}</span>
+        <span class="audit-action"><span class="pill ${color}">${e.action}</span></span>
+        <span class="audit-detail">${e.detail || ''}</span>
+      </div>`;
+    }).join('');
+  } catch(e) { wrap.innerHTML = `<div class="empty">Error: ${e.message}</div>`; }
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+// Auto-refresh stats every 30s
+setInterval(loadStats, 30000);
+</script>
+</body>
+</html>
