@@ -1,3 +1,12 @@
+"""
+NudeNet Moderation Server — Railway Edition
+Perfectly mapped to your real Supabase schema:
+  - users          (is_banned, ban_reason in user_private)
+  - user_private   (report_count, ban_reason, ban_until)
+  - blocks         (blocker_id, blocked_id, reason)
+  - reports        (reporter_id, reported_user_id, reason, description, status)
+  + hash_cache / audit_log / appeals  (new tables — see schema_addon.sql)
+"""
 
 import io, os, hashlib, datetime, asyncio, uuid
 from contextlib import asynccontextmanager
@@ -6,7 +15,7 @@ import httpx
 import imagehash
 import magic
 from PIL import Image
-from nudenet import NudeDetector
+from nudenet import NudeClassifier   # NudeNet v3 — ONNX-based, no gcc needed
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Header, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,7 +35,7 @@ ADMIN_SECRET     = os.environ.get("ADMIN_SECRET", "change-me")
 
 # ── Clients ───────────────────────────────────────────────────────────────────
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-detector         = NudeDetector()
+classifier       = NudeClassifier()   # NudeNet v3 — downloads ONNX model on first run
 limiter          = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
@@ -43,11 +52,8 @@ VIOLATION_THRESHOLD = 3       # auto-ban after N NSFW uploads
 PHASH_THRESHOLD     = 10      # hamming distance for near-duplicate images
 MAX_FILE_SIZE       = 5 * 1024 * 1024
 ALLOWED_MIME_TYPES  = {"image/jpeg", "image/png", "image/webp", "image/gif"}
-UNSAFE_LABELS       = {
-    "EXPOSED_BREAST_F", "EXPOSED_GENITALIA_F", "EXPOSED_GENITALIA_M",
-    "EXPOSED_BUTTOCKS", "EXPOSED_ANUS",
-}
 AUTO_REPORT_THRESHOLD = 5     # auto-ban after N unique reporters
+# NudeNet v3 returns {"unsafe": score, "safe": score} — no label list needed
 
 # ── Async job store ───────────────────────────────────────────────────────────
 job_store: dict = {}
@@ -290,15 +296,16 @@ async def _run_detection(job_id: str, contents: bytes, img: Image.Image, user_id
         }}
         return
 
-    # 3. Fresh NudeNet scan
-    img_path = f"/tmp/{user_id}_{job_id}.jpg"
+    # 3. Fresh NudeNet scan (v3 ONNX API)
+    # classify() returns: { "img_path": {"unsafe": 0.97, "safe": 0.03} }
+    img_path   = f"/tmp/{user_id}_{job_id}.jpg"
     img.save(img_path)
-    detections  = detector.detect(img_path)
+    result_map = classifier.classify(img_path)
     os.remove(img_path)
 
-    unsafe_hits = [d for d in detections if d["class"] in UNSAFE_LABELS]
-    confidence  = max((d["score"] for d in unsafe_hits), default=0.0)
-    is_safe     = len(unsafe_hits) == 0 or confidence < 0.5
+    scores     = result_map.get(img_path, {})
+    confidence = float(scores.get("unsafe", scores.get("UNSAFE", 0.0)))
+    is_safe    = confidence < 0.5
 
     db_hash_store(md5_key, phash_key, is_safe, round(confidence, 4))
 
@@ -359,14 +366,14 @@ async def detect_sync(
         if not similar["safe"]: db_record_violation(x_user_id)
         return {**similar, "source": "cache_similar", "user_banned": db_is_banned(x_user_id)}
 
-    img_path = f"/tmp/{x_user_id}_sync.jpg"
+    img_path   = f"/tmp/{x_user_id}_sync.jpg"
     img.save(img_path)
-    detections  = detector.detect(img_path)
+    result_map = classifier.classify(img_path)
     os.remove(img_path)
 
-    unsafe_hits = [d for d in detections if d["class"] in UNSAFE_LABELS]
-    confidence  = max((d["score"] for d in unsafe_hits), default=0.0)
-    is_safe     = len(unsafe_hits) == 0 or confidence < 0.5
+    scores     = result_map.get(img_path, {})
+    confidence = float(scores.get("unsafe", scores.get("UNSAFE", 0.0)))
+    is_safe    = confidence < 0.5
 
     db_hash_store(md5_key, phash_key, is_safe, round(confidence, 4))
 
